@@ -17,6 +17,35 @@ try {
 } catch { storageOK = false; }
 let view = 'home', config = {mode:'practice',count:20,minutes:20,shuffle:true};
 let bankPage=1, search='', result=null, reviewFilter='all', toastTimeout;
+let focusLookup=false;
+const fold = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d').toLowerCase();
+function searchTerms() { return [...new Set(fold(search).trim().split(/\s+/).filter(Boolean))]; }
+function highlight(text,terms=searchTerms()) {
+  if(!terms.length)return esc(text);
+  let normalized='',offset=0;
+  const starts=[],ends=[],ranges=[];
+  for(const char of text){
+    const part=fold(char);
+    if(!part&&ends.length)ends[ends.length-1]=offset+char.length;
+    for(let i=0;i<part.length;i++){starts.push(offset);ends.push(offset+char.length);}
+    normalized+=part;offset+=char.length;
+  }
+  for(const term of terms){
+    let at=normalized.indexOf(term);
+    while(at!==-1){ranges.push([starts[at],ends[at+term.length-1]]);at=normalized.indexOf(term,at+1);}
+  }
+  ranges.sort((a,b)=>a[0]-b[0]);
+  const merged=[];
+  for(const range of ranges){const last=merged[merged.length-1];if(last&&range[0]<=last[1])last[1]=Math.max(last[1],range[1]);else merged.push([...range]);}
+  let html='',cursor=0;
+  for(const [start,end] of merged){html+=esc(text.slice(cursor,start))+'<mark>'+esc(text.slice(start,end))+'</mark>';cursor=end;}
+  return html+esc(text.slice(cursor));
+}
+function openLookup() {
+  if(document.querySelector('#confirm-dialog').open)return;
+  if(view==='bank'||view==='saved'){const input=document.querySelector('#search');input.focus();input.select();input.scrollIntoView({block:'center'});}
+  else{focusLookup=true;location.hash='bank';}
+}
 
 function validSession(s) {
   return s && ['practice','exam'].includes(s.mode) && Array.isArray(s.ids) && s.ids.length>0 && s.ids.every(id=>byId.has(id)) && new Set(s.ids).size===s.ids.length && s.answers && typeof s.answers==='object' && !Array.isArray(s.answers) && Object.entries(s.answers).every(([id,a])=>s.ids.includes(Number(id))&&Number.isInteger(a)&&a>=0&&a<4) && Number.isInteger(s.index) && s.index>=0 && s.index<s.ids.length && Number.isFinite(s.started) && (s.deadline===null || Number.isFinite(s.deadline));
@@ -90,14 +119,14 @@ function renderResult() {
   const filtered=s.ids.filter(id=>reviewFilter==='all'||(reviewFilter==='wrong'&&s.answers[id]!==undefined&&s.answers[id]!==byId.get(id).correct[0])||(reviewFilter==='blank'&&s.answers[id]===undefined));
   main.innerHTML=`<span class="eyebrow">THÊM MỘT LẦN LUYỆN TẬP, THÊM MỘT LẦN GHI NHỚ</span><div class="result-hero"><div class="score-ring" style="--score:${g.percent}%"><div class="score-inner"><strong>${g.percent}%</strong><small>TRẢ LỜI ĐÚNG</small></div></div><div><h1>${g.percent>=80?'Bạn làm tốt lắm!':'Hoàn thành một bước nữa.'}</h1><p>${s.mode==='exam'?'Thi thử':'Luyện tập'} · ${g.total} câu · Thời gian ${duration(s.finished-s.started)}</p><div class="result-numbers"><span><b>${g.correct}</b>đúng</span><span><b>${g.wrong}</b>sai</span><span><b>${g.blank}</b>chưa làm</span></div></div></div><div class="result-buttons"><button class="button primary" data-action="retry-result" ${wrongIds.length?'':'disabled'}>Luyện câu sai & chưa làm (${wrongIds.length}) →</button><a href="#home" class="button secondary">Về tổng quan</a></div><div class="section-title" style="margin-bottom:17px"><h2>Xem lại bài làm</h2><span class="section-num">ĐÁP ÁN THEO BỘ ĐỀ</span></div><div class="review-tabs"><button data-action="review-filter" data-value="all" class="${reviewFilter==='all'?'active':''}">Tất cả (${g.total})</button><button data-action="review-filter" data-value="wrong" class="${reviewFilter==='wrong'?'active':''}">Trả lời sai (${g.wrong})</button><button data-action="review-filter" data-value="blank" class="${reviewFilter==='blank'?'active':''}">Chưa làm (${g.blank})</button></div><div class="bank-list">${filtered.map(id=>{const q=byId.get(id),a=s.answers[id],ok=a===q.correct[0];return `<article class="panel bank-item"><div class="question-top"><span>CÂU ${s.ids.indexOf(id)+1} · MÃ GỐC #${id}</span>${bookmarkButton(q)}</div><div class="review-status ${ok?'':'wrong'}">${ok?'✓ Trả lời đúng':a===undefined?'○ Chưa trả lời':'✕ Trả lời chưa đúng'}</div><h3>${esc(q.text)}</h3>${a!==undefined&&!ok?`<p class="review-choice wrong">Bạn chọn ${letters[a]}. ${esc(q.options[a])}</p>`:''}<p class="review-choice">Đáp án ${letters[q.correct[0]]}. ${esc(q.options[q.correct[0]])}</p><details><summary>Xem đủ 4 lựa chọn</summary>${q.options.map((o,i)=>`<p class="bank-answer ${i===q.correct[0]?'right':''}">${letters[i]}. ${esc(o)}</p>`).join('')}</details>${note(q)}</article>`;}).join('')||'<div class="empty-inline">Không có câu hỏi trong nhóm này.</div>'}</div>`;
 }
-function bankQuestions() { const needle=search.toLocaleLowerCase('vi');return QUESTIONS.filter(q=>(view!=='saved'||data.saved.includes(q.id))&&(!needle||q.text.toLocaleLowerCase('vi').includes(needle)||String(q.id)===needle)); }
+function bankQuestions() { const terms=searchTerms();return QUESTIONS.filter(q=>{if(view==='saved'&&!data.saved.includes(q.id))return false;if(!terms.length)return true;if(/^\d+$/.test(search.trim())&&byId.has(Number(search.trim())))return q.id===Number(search.trim());const content=fold([q.text,...q.options].join(' '));return terms.every(term=>content.includes(term));}); }
 function renderBank() {
-  main.innerHTML=header(view==='saved'?'Những câu muốn nhớ.':'180 câu hỏi, một nơi ôn tập.',view==='saved'?'Lưu lại câu cần chú ý, quay lại ôn bất cứ lúc nào.':'Tra cứu nội dung và đối chiếu đáp án theo bộ đề gốc.')+`<div class="search-bar"><input type="search" id="search" class="search-input" placeholder="Tìm nội dung hoặc số câu hỏi…" value="${esc(search)}" aria-label="Tìm câu hỏi">${view==='saved'?`<button class="button primary" data-action="practice-saved" ${data.saved.length?'':'disabled'}>Luyện các câu đã lưu →</button>`:''}</div><div id="bank-results"></div>`;renderBankResults();
+  main.innerHTML=header(view==='saved'?'Những câu muốn nhớ.':'180 câu hỏi, một nơi ôn tập.',view==='saved'?'Lưu lại câu cần chú ý, quay lại ôn bất cứ lúc nào.':'Tra cứu nội dung và đối chiếu đáp án theo bộ đề gốc.')+`<div class="search-bar"><input type="search" id="search" class="search-input" placeholder="Gõ từ khóa, ví dụ: dai hoi 2030…" value="${esc(search)}" aria-label="Tìm câu hỏi" aria-describedby="search-help" autocomplete="off">${view==='saved'?`<button class="button primary" data-action="practice-saved" ${data.saved.length?'':'disabled'}>Luyện các câu đã lưu →</button>`:''}</div><p id="search-help" class="search-help">Tìm trong câu hỏi và cả 4 đáp án. Có dấu hoặc không dấu đều được. Nhiều từ khóa giúp thu hẹp kết quả. <span>Ctrl+F để tìm nhanh.</span></p><div id="bank-results"></div>`;renderBankResults();
 }
 function renderBankResults() {
   const filtered=bankQuestions(),pages=Math.max(1,Math.ceil(filtered.length/12));bankPage=Math.min(bankPage,pages);
   const el=document.querySelector('#bank-results');if(!el)return;
-  el.innerHTML=`<p class="bank-count">${filtered.length} câu hỏi${search?' phù hợp':''} · Đáp án lấy từ dấu X trong Excel</p><div class="bank-list">${filtered.slice((bankPage-1)*12,bankPage*12).map(q=>`<article class="panel bank-item"><div class="question-top"><span>CÂU ${String(q.id).padStart(2,'0')}</span>${bookmarkButton(q)}</div><h3>${esc(q.text)}</h3><details><summary>Xem 4 lựa chọn và đáp án</summary>${q.options.map((o,i)=>`<p class="bank-answer ${i===q.correct[0]?'right':''}">${letters[i]}. ${esc(o)}${i===q.correct[0]?' <strong>✓ Đáp án đúng</strong>':''}</p>`).join('')}${note(q)}</details></article>`).join('')||`<div class="panel empty-state"><div class="empty-symbol">${search?'⌕':'⚑'}</div><h2>${search?'Chưa tìm thấy câu hỏi':'Chưa có câu nào được lưu'}</h2><p>${search?'Thử một từ khóa ngắn hơn hoặc tìm theo số câu.':'Nhấn “Lưu câu” khi luyện tập để thêm câu hỏi vào đây.'}</p></div>`}</div>${pages>1?`<div class="pagination"><button class="button secondary" data-action="bank-prev" ${bankPage===1?'disabled':''}>← Trước</button><span>Trang ${bankPage} / ${pages}</span><button class="button secondary" data-action="bank-next" ${bankPage===pages?'disabled':''}>Tiếp →</button></div>`:''}`;
+  el.innerHTML=`<p class="bank-count" role="status" aria-live="polite">${filtered.length} câu hỏi${search.trim()?' phù hợp':''} · Đáp án lấy từ dấu X trong Excel</p><div class="bank-list">${filtered.slice((bankPage-1)*12,bankPage*12).map(q=>`<article class="panel bank-item"><div class="question-top"><span>CÂU ${String(q.id).padStart(2,'0')}</span>${bookmarkButton(q)}</div><h3>${highlight(q.text)}</h3><details ${search.trim()?'open':''}><summary>Xem 4 lựa chọn và đáp án</summary>${q.options.map((o,i)=>`<p class="bank-answer ${i===q.correct[0]?'right':''}">${letters[i]}. ${highlight(o)}${i===q.correct[0]?' <strong>✓ Đáp án đúng</strong>':''}</p>`).join('')}${note(q)}</details></article>`).join('')||`<div class="panel empty-state"><div class="empty-symbol">${search.trim()?'⌕':'⚑'}</div><h2>${search.trim()?'Chưa tìm thấy câu hỏi':'Chưa có câu nào được lưu'}</h2><p>${search.trim()?'Thử bớt từ khóa hoặc tìm theo số câu.':'Nhấn “Lưu câu” khi luyện tập để thêm câu hỏi vào đây.'}</p></div>`}</div>${pages>1?`<div class="pagination"><button class="button secondary" data-action="bank-prev" ${bankPage===1?'disabled':''}>← Trước</button><span>Trang ${bankPage} / ${pages}</span><button class="button secondary" data-action="bank-next" ${bankPage===pages?'disabled':''}>Tiếp →</button></div>`:''}`;
 }
 function renderHistory() { main.innerHTML=header('Nhìn lại để tiến bộ.','Các lượt đã nộp được lưu trên trình duyệt này, tối đa 30 lượt.')+(data.history.length?`<section class="panel history-panel">${data.history.map(historyRow).join('')}</section>`:'<section class="panel empty-state"><div class="empty-symbol">◷</div><h2>Hành trình bắt đầu từ câu đầu tiên.</h2><p>Nộp một bài luyện tập hoặc thi thử để xem kết quả ở đây.</p><a class="button primary" href="#home">Bắt đầu luyện tập →</a></section>'); }
 main.addEventListener('click',event=>{
@@ -120,11 +149,13 @@ main.addEventListener('click',event=>{
 main.addEventListener('change',event=>{const {id,value,checked}=event.target;if(id==='question-count')config.count=Number(value);if(id==='time-limit')config.minutes=Number(value);if(id==='shuffle')config.shuffle=checked;});
 main.addEventListener('input',event=>{if(event.target.id==='search'){search=event.target.value;bankPage=1;renderBankResults();}});
 document.querySelector('#confirm-dialog').addEventListener('close',event=>{if(event.target.returnValue==='submit')finish();});
+document.querySelector('#lookup-button').addEventListener('click',openLookup);
 document.addEventListener('keydown',event=>{
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'&&!event.altKey&&view!=='quiz'&&!document.querySelector('#confirm-dialog').open){event.preventDefault();openLookup();return;}
   if(view!=='quiz'||!data.session||event.ctrlKey||event.metaKey||event.altKey||document.querySelector('dialog').open||/INPUT|SELECT|TEXTAREA/.test(event.target.tagName))return;
   if(/^[1-4]$/.test(event.key)){event.preventDefault();choose(Number(event.key)-1);}
   if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();const s=data.session;s.index=Math.max(0,Math.min(s.ids.length-1,s.index+(event.key==='ArrowRight'?1:-1)));save();renderQuiz();}
 });
-function route() { const next=location.hash.slice(1)||'home';if(next==='main'){main.focus();return;}if(['home','bank','saved','history','quiz','result'].includes(next)){if(next!==view){search='';bankPage=1;}go(next);}else{location.hash='home';}tick(); }
+function route() { const next=location.hash.slice(1)||'home';if(next==='main'){main.focus();return;}if(['home','bank','saved','history','quiz','result'].includes(next)){if(next!==view){search='';bankPage=1;}go(next);if(focusLookup){focusLookup=false;document.querySelector('#search')?.focus();}}else{location.hash='home';}tick(); }
 function tick() { const s=data.session;if(!s)return;if(s.deadline&&Date.now()>=s.deadline){finish(true);return;}const timer=document.querySelector('#timer');if(timer){timer.textContent='◷ '+duration(s.deadline?s.deadline-Date.now():Date.now()-s.started);timer.classList.toggle('urgent',Boolean(s.deadline&&s.deadline-Date.now()<60000));} }
 window.addEventListener('hashchange',route);document.addEventListener('visibilitychange',tick);setInterval(tick,1000);route();if(!storageOK)toast('Không đọc được dữ liệu đã lưu. Bạn vẫn có thể luyện tập trong phiên này.');

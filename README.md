@@ -17,6 +17,7 @@ Mở `dist/index.html` bằng trình duyệt. Cả nội dung và tính năng đ
 - Thi thử: chọn thời gian, đổi đáp án trước khi nộp, tự nộp khi hết giờ.
 - Chọn 10 / 20 / 30 / 50 / 180 câu, trộn thứ tự câu hỏi.
 - Lưu câu hỏi, tìm kiếm, xem lại đáp án, luyện câu sai và câu chưa làm.
+- Tra cứu từ khóa trong cả câu hỏi và đáp án, không phân biệt dấu tiếng Việt hoặc chữ hoa/thường. Nhập nhiều từ để tìm các câu có đủ từ khóa; từ khớp được tô sáng và phần đáp án tự mở. Nhập số để tìm đúng số câu. Nút “Tra cứu” luôn ở đầu trang, Ctrl+F / Cmd+F mở ô tìm kiếm khi không đang làm bài.
 - Tự lưu bài đang làm và tối đa 30 lượt trong localStorage của trình duyệt. Dữ liệu không đồng bộ giữa thiết bị.
 - Bố cục thích ứng với điện thoại và máy tính. Phím 1–4 chọn đáp án, phím mũi tên chuyển câu.
 
