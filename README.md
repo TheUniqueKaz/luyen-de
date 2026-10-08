@@ -2,6 +2,10 @@
 
 Website front-end bằng HTML, CSS và JavaScript thuần, không cần cài thư viện hoặc chạy bước build.
 
+Website công khai: [Mở Ôn luyện](https://theuniquekaz.github.io/luyen-de/).
+
+GitHub Pages triển khai nhánh `main`, thư mục gốc. Trang `index.html` ở thư mục gốc chuyển đến ứng dụng trong `dist/`; các lần cập nhật mã nguồn trên nhánh `main` sẽ được GitHub Pages xuất bản lại.
+
 ## Mở trên máy
 
 Mở `dist/index.html` bằng trình duyệt. Cả nội dung và tính năng đều hoạt động ngoại tuyến. Nếu trình duyệt hạn chế lưu dữ liệu với địa chỉ `file://`, chạy một static server trong thư mục `dist` (ví dụ `python -m http.server 4173`) rồi mở `http://localhost:4173`.
